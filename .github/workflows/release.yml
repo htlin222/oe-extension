@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Package Chrome extension
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Test
+        run: npm test
+
+      - name: Build ZIP
+        run: npm run build
+
+      - name: Set up Chrome
+        id: chrome
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Pack CRX
+        env:
+          CRX_PRIVATE_KEY_BASE64: ${{ secrets.CRX_PRIVATE_KEY_BASE64 }}
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./manifest.json').version")"
+          CHROME="${{ steps.chrome.outputs.chrome-path }}"
+          if [ -n "${CRX_PRIVATE_KEY_BASE64:-}" ]; then
+            echo "$CRX_PRIVATE_KEY_BASE64" | base64 -d > dist/extension.pem
+            "$CHROME" --headless --disable-gpu --no-sandbox --pack-extension="$PWD/dist/extension" --pack-extension-key="$PWD/dist/extension.pem"
+          else
+            "$CHROME" --headless --disable-gpu --no-sandbox --pack-extension="$PWD/dist/extension"
+          fi
+          mv dist/extension.crx "dist/oe-extension-v${VERSION}.crx"
+          shred -u dist/extension.pem 2>/dev/null || rm -f dist/extension.pem
+
+      - name: Upload release artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/oe-extension-v*.zip
+            dist/oe-extension-v*.crx
