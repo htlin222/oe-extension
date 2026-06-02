@@ -14,6 +14,8 @@ right next to the current tab. With a validated Groq API key, it can also rewrit
 selected recall-style text into editable foreground questions before sending them
 to OpenEvidence.
 
+![Selection toolbar demo](docs/demo-toolbar.svg)
+
 ## Features
 
 - Selection toolbar anchored above highlighted text.
