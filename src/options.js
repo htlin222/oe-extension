@@ -4,6 +4,9 @@ const CUSTOM_PROMPTS_STORAGE_KEY = "oeCustomPrompts";
 const THEME_STORAGE_KEY = "oeTheme";
 const GROQ_API_KEY_STORAGE_KEY = "oeGroqApiKey";
 const GROQ_VALIDATED_STORAGE_KEY = "oeGroqApiKeyValidated";
+const HISTORY_STORAGE_KEY = "oeHistory";
+const HISTORY_ENABLED_STORAGE_KEY = "oeHistoryEnabled";
+const DEFAULT_HISTORY_ENABLED = true;
 const DEFAULT_WHITELIST = [
   "https://ankiuser.net/study",
   "https://www.openevidence.com/*",
@@ -27,6 +30,15 @@ const addCustomPromptButton = document.querySelector("#add-custom-prompt");
 const groqStatus = document.querySelector("#groq-status");
 const resetButton = document.querySelector("#reset");
 const status = document.querySelector("#status");
+const recordHistoryCheckbox = document.querySelector("#record-history");
+const tabButtons = Array.from(document.querySelectorAll(".tab-button"));
+const optionsForm = document.querySelector("#options-form");
+const settingsPanel = document.querySelector("#tab-settings");
+const promptsPanel = document.querySelector("#tab-prompts");
+const historyPanel = document.querySelector("#tab-history");
+const historyList = document.querySelector("#history-list");
+const historyEmpty = document.querySelector("#history-empty");
+const clearHistoryButton = document.querySelector("#clear-history");
 
 function createLucideIcon(name) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -190,8 +202,10 @@ async function loadOptions() {
 
   const localItems = await chrome.storage.local.get({
     [GROQ_API_KEY_STORAGE_KEY]: "",
-    [GROQ_VALIDATED_STORAGE_KEY]: false
+    [GROQ_VALIDATED_STORAGE_KEY]: false,
+    [HISTORY_ENABLED_STORAGE_KEY]: DEFAULT_HISTORY_ENABLED
   });
+  recordHistoryCheckbox.checked = localItems[HISTORY_ENABLED_STORAGE_KEY] !== false;
   groqApiKeyInput.value = localItems[GROQ_API_KEY_STORAGE_KEY] || "";
   const hasValidatedKey = localItems[GROQ_VALIDATED_STORAGE_KEY] === true && Boolean(groqApiKeyInput.value);
   setGroqStatus(hasValidatedKey ? "Groq API key validated." : "No validated Groq API key.", hasValidatedKey ? "success" : "");
@@ -276,6 +290,150 @@ themeSelect.addEventListener("change", () => {
   applyOptionsTheme(themeSelect.value);
 });
 
+recordHistoryCheckbox.addEventListener("change", () => {
+  chrome.storage.local.set({ [HISTORY_ENABLED_STORAGE_KEY]: recordHistoryCheckbox.checked });
+  setStatus(recordHistoryCheckbox.checked ? "History recording on." : "History recording off.");
+});
+
+function activateTab(name) {
+  tabButtons.forEach((button) => {
+    const isActive = button.dataset.tab === name;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+
+  optionsForm.hidden = name === "history";
+  settingsPanel.hidden = name !== "settings";
+  promptsPanel.hidden = name !== "prompts";
+  historyPanel.hidden = name !== "history";
+
+  if (name === "history") {
+    loadHistory();
+  }
+}
+
+tabButtons.forEach((button) => {
+  button.addEventListener("click", () => activateTab(button.dataset.tab));
+});
+
+function formatTimestamp(timestamp) {
+  if (!Number.isFinite(timestamp)) {
+    return "";
+  }
+  try {
+    return new Date(timestamp).toLocaleString();
+  } catch (_error) {
+    return "";
+  }
+}
+
+function createHistoryDetail(label, value) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "history-detail";
+
+  const term = document.createElement("span");
+  term.className = "history-detail__label";
+  term.textContent = label;
+
+  const body = document.createElement("p");
+  body.className = "history-detail__value";
+  body.textContent = value;
+
+  wrapper.append(term, body);
+  return wrapper;
+}
+
+function createHistoryItem(entry) {
+  const item = document.createElement("article");
+  item.className = "history-item";
+
+  const head = document.createElement("div");
+  head.className = "history-item__head";
+
+  const source = document.createElement("span");
+  source.className = "history-source";
+  source.dataset.source = entry.source || "selection";
+  source.textContent = entry.source || "selection";
+
+  const meta = document.createElement("span");
+  meta.className = "history-meta";
+  meta.textContent = formatTimestamp(entry.timestamp);
+
+  const deleteButton = document.createElement("button");
+  deleteButton.type = "button";
+  deleteButton.className = "history-delete";
+  deleteButton.title = "Delete entry";
+  deleteButton.setAttribute("aria-label", "Delete entry");
+  deleteButton.append(createLucideIcon("x"));
+  deleteButton.addEventListener("click", () => deleteHistoryEntry(entry.id));
+
+  head.append(source, meta, deleteButton);
+
+  const finalText = document.createElement("p");
+  finalText.className = "history-final";
+  finalText.textContent = entry.finalText || "";
+
+  item.append(head, finalText);
+
+  if (entry.url) {
+    const link = document.createElement("a");
+    link.className = "history-open";
+    link.href = entry.url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = "Open in OpenEvidence";
+    item.append(link);
+  }
+
+  if (entry.original || entry.promptInstruction || entry.transformed) {
+    const details = document.createElement("details");
+    details.className = "history-transform";
+
+    const summary = document.createElement("summary");
+    summary.textContent = entry.promptName ? `Transform · ${entry.promptName}` : "Transform details";
+    details.append(summary);
+
+    if (entry.original) {
+      details.append(createHistoryDetail("Original selection", entry.original));
+    }
+    if (entry.promptInstruction) {
+      details.append(createHistoryDetail("Prompt", entry.promptInstruction));
+    }
+    if (entry.transformed) {
+      details.append(createHistoryDetail("Transformed output", entry.transformed));
+    }
+
+    item.append(details);
+  }
+
+  return item;
+}
+
+async function loadHistory() {
+  const items = await chrome.storage.local.get({ [HISTORY_STORAGE_KEY]: [] });
+  const history = Array.isArray(items[HISTORY_STORAGE_KEY]) ? items[HISTORY_STORAGE_KEY] : [];
+
+  historyList.textContent = "";
+  historyEmpty.hidden = history.length > 0;
+
+  history.forEach((entry) => {
+    historyList.appendChild(createHistoryItem(entry));
+  });
+}
+
+async function deleteHistoryEntry(id) {
+  const items = await chrome.storage.local.get({ [HISTORY_STORAGE_KEY]: [] });
+  const history = Array.isArray(items[HISTORY_STORAGE_KEY]) ? items[HISTORY_STORAGE_KEY] : [];
+  const next = history.filter((entry) => entry.id !== id);
+  await chrome.storage.local.set({ [HISTORY_STORAGE_KEY]: next });
+  loadHistory();
+}
+
+clearHistoryButton.addEventListener("click", async () => {
+  await chrome.storage.local.set({ [HISTORY_STORAGE_KEY]: [] });
+  loadHistory();
+});
+
 window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener("change", () => {
   if (themeSelect.value === "system") {
     applyOptionsTheme("system");
@@ -290,3 +448,4 @@ setButtonIcon(clearGroqKeyButton, "trash");
 setButtonIcon(addCustomPromptButton, "plus");
 setButtonIcon(form.querySelector('button[type="submit"]'), "save");
 setButtonIcon(resetButton, "x");
+setButtonIcon(clearHistoryButton, "trash");

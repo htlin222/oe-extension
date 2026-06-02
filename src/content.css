@@ -87,6 +87,13 @@
   color: var(--oe-fg);
 }
 
+.oe-selection-button--uptodate {
+  min-width: 0;
+  border-color: var(--oe-border);
+  background: var(--oe-bg);
+  color: var(--oe-fg);
+}
+
 .oe-selection-button--custom {
   min-width: 0;
   max-width: 136px;
@@ -112,6 +119,7 @@
 }
 
 .oe-selection-button--pico:hover,
+.oe-selection-button--uptodate:hover,
 .oe-selection-button--custom:hover {
   border-color: var(--oe-border-strong);
   background: var(--oe-bg-muted);

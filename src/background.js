@@ -13,6 +13,10 @@ const GROQ_VALIDATED_STORAGE_KEY = "oeGroqApiKeyValidated";
 const GROQ_MODEL = "llama-3.3-70b-versatile";
 const GROQ_TIMEOUT_MS = 30000;
 const ASK_CONTEXT_MENU_ID = "oe-ask-selection";
+const HISTORY_STORAGE_KEY = "oeHistory";
+const HISTORY_ENABLED_STORAGE_KEY = "oeHistoryEnabled";
+const DEFAULT_HISTORY_ENABLED = true;
+const HISTORY_LIMIT = 200;
 const PICO_INSTRUCTION = `Rewrite my recall question as an EBM foreground question. Shift "what/which" to "what's the evidence for/why." Impose PICO (population, intervention/exposure, comparator, outcome) and pick the right question type (therapy/diagnosis/prognosis). Require cited evidence, guideline comparison, and clinical implications--not just definitions.
 
 Export as JSON:
@@ -29,6 +33,57 @@ function buildOpenEvidenceUrl(query) {
   return `https://www.openevidence.com/ask?${params.toString()}`;
 }
 
+function buildUpToDateUrl(query) {
+  const params = new URLSearchParams({ search: query });
+  return `https://www.uptodate.com/contents/search?${params.toString()}`;
+}
+
+let historyIdCounter = 0;
+
+function buildHistoryEntry(entry) {
+  historyIdCounter += 1;
+  const normalized = {
+    id: `${Date.now()}-${historyIdCounter}`,
+    timestamp: Date.now(),
+    url: typeof entry.url === "string" ? entry.url : "",
+    finalText: typeof entry.finalText === "string" ? entry.finalText : "",
+    source: typeof entry.source === "string" ? entry.source : "selection"
+  };
+
+  if (typeof entry.original === "string" && entry.original) {
+    normalized.original = entry.original;
+  }
+  if (typeof entry.promptName === "string" && entry.promptName) {
+    normalized.promptName = entry.promptName;
+  }
+  if (typeof entry.promptInstruction === "string" && entry.promptInstruction) {
+    normalized.promptInstruction = entry.promptInstruction;
+  }
+  if (typeof entry.transformed === "string" && entry.transformed) {
+    normalized.transformed = entry.transformed;
+  }
+
+  return normalized;
+}
+
+function recordHistory(entry) {
+  chrome.storage.local.get(
+    {
+      [HISTORY_ENABLED_STORAGE_KEY]: DEFAULT_HISTORY_ENABLED,
+      [HISTORY_STORAGE_KEY]: []
+    },
+    (items) => {
+      if (items[HISTORY_ENABLED_STORAGE_KEY] === false) {
+        return;
+      }
+
+      const existing = Array.isArray(items[HISTORY_STORAGE_KEY]) ? items[HISTORY_STORAGE_KEY] : [];
+      const next = [buildHistoryEntry(entry), ...existing].slice(0, HISTORY_LIMIT);
+      chrome.storage.local.set({ [HISTORY_STORAGE_KEY]: next });
+    }
+  );
+}
+
 function buildTabOptions(url, active, sourceTab) {
   const tabOptions = { url, active };
 
@@ -39,22 +94,38 @@ function buildTabOptions(url, active, sourceTab) {
   return tabOptions;
 }
 
-function openOpenEvidenceQuery(query, sourceTab, sendResponse) {
-  const nextQuery = typeof query === "string" ? query.trim() : "";
-  if (!nextQuery) {
-    sendResponse?.({ ok: false, error: "Empty query" });
-    return;
-  }
-
+function openUrlBesideTab(url, sourceTab, sendResponse) {
   chrome.storage.sync.get({ [ACTIVE_TAB_STORAGE_KEY]: DEFAULT_OPEN_IN_ACTIVE_TAB }, (items) => {
     const active = items[ACTIVE_TAB_STORAGE_KEY] === true;
-    const tabOptions = buildTabOptions(buildOpenEvidenceUrl(nextQuery), active, sourceTab);
+    const tabOptions = buildTabOptions(url, active, sourceTab);
 
     chrome.tabs
       .create(tabOptions)
       .then(() => sendResponse?.({ ok: true }))
       .catch((error) => sendResponse?.({ ok: false, error: error.message }));
   });
+}
+
+function openOpenEvidenceQuery(query, sourceTab, sendResponse, meta) {
+  const nextQuery = typeof query === "string" ? query.trim() : "";
+  if (!nextQuery) {
+    sendResponse?.({ ok: false, error: "Empty query" });
+    return;
+  }
+
+  const url = buildOpenEvidenceUrl(nextQuery);
+  recordHistory({ ...(meta || { source: "selection" }), url, finalText: nextQuery });
+  openUrlBesideTab(url, sourceTab, sendResponse);
+}
+
+function openUpToDateQuery(query, sourceTab, sendResponse) {
+  const nextQuery = typeof query === "string" ? query.trim() : "";
+  if (!nextQuery) {
+    sendResponse?.({ ok: false, error: "Empty query" });
+    return;
+  }
+
+  openUrlBesideTab(buildUpToDateUrl(nextQuery), sourceTab, sendResponse);
 }
 
 async function callGroq(apiKey, messages, options = {}) {
@@ -177,7 +248,12 @@ chrome.runtime.onInstalled.addListener(async () => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "OE_OPEN_QUERY") {
-    openOpenEvidenceQuery(message.query, sender.tab, sendResponse);
+    openOpenEvidenceQuery(message.query, sender.tab, sendResponse, message.meta);
+    return true;
+  }
+
+  if (message?.type === "OE_OPEN_UPTODATE") {
+    openUpToDateQuery(message.query, sender.tab, sendResponse);
     return true;
   }
 
@@ -236,7 +312,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         const prompt = `${PICO_INSTRUCTION}\n\n+++user selection+++\n${selection}`;
         callGroq(apiKey, prompt, { jsonMode: true })
-          .then((content) => sendResponse({ ok: true, content: extractPicoQuestion(content) }))
+          .then((content) => sendResponse({ ok: true, content: extractPicoQuestion(content), prompt: PICO_INSTRUCTION }))
           .catch((error) => sendResponse({ ok: false, error: error.message }));
       }
     );
@@ -267,7 +343,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         callGroq(apiKey, buildJsonTransformMessages(prompt, selection), { jsonMode: true })
-          .then((content) => sendResponse({ ok: true, content: extractPicoQuestion(content) }))
+          .then((content) => sendResponse({ ok: true, content: extractPicoQuestion(content), prompt }))
           .catch((error) => sendResponse({ ok: false, error: error.message }));
       }
     );
@@ -287,5 +363,5 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     return;
   }
 
-  openOpenEvidenceQuery(info.selectionText, tab);
+  openOpenEvidenceQuery(info.selectionText, tab, undefined, { source: "context-menu" });
 });

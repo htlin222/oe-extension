@@ -19,8 +19,10 @@ to OpenEvidence.
 ## Features
 
 - Selection toolbar anchored above highlighted text.
+- `UpToDate` button to search the selection on UpToDate beside the current tab.
 - Right-click `Ask OpenEvidence` context menu for pages and Chrome PDF selection fallback.
 - Opens OpenEvidence beside the current tab, optionally in the background.
+- Local query history with a dedicated options tab, recording each text sent to OpenEvidence (plus the original selection, prompt, and transformed text for `PICO`/custom rewrites).
 - Whitelist-based activation, including `file:///*` support.
 - BYOK Groq integration stored in `chrome.storage.local`.
 - Built-in `PICO` rewrite flow for evidence-based medicine questions.
@@ -139,7 +141,7 @@ If you use this project, please cite it:
   title = {oe-extension: OpenEvidence selection helper for Chrome},
   year = {2026},
   url = {https://github.com/htlin222/oe-extension},
-  version = {0.1.0}
+  version = {0.1.1}
 }
 ```
 

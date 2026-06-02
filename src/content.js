@@ -10,6 +10,7 @@ const DEFAULT_WHITELIST = [
   "file:///*"
 ];
 const BUTTON_WIDTH = 154;
+const UPTODATE_BUTTON_WIDTH = 110;
 const PICO_BUTTON_WIDTH = 62;
 const CUSTOM_BUTTON_WIDTH = 96;
 const BUTTON_HEIGHT = 34;
@@ -178,6 +179,8 @@ function getButtonPosition() {
     Math.min(
       window.innerWidth - VIEWPORT_MARGIN * 2,
       BUTTON_WIDTH +
+        BUTTON_GAP +
+        UPTODATE_BUTTON_WIDTH +
         (groqKeyValidated ? BUTTON_GAP + PICO_BUTTON_WIDTH : 0) +
         customButtonCount * (BUTTON_GAP + CUSTOM_BUTTON_WIDTH)
     );
@@ -211,10 +214,21 @@ function getPanelPosition() {
   return { left, top, width: panelWidth };
 }
 
-function openQuery(query) {
+function openQuery(query, meta) {
   const nextQuery = typeof query === "string" ? query.trim() : "";
   if (nextQuery) {
-    chrome.runtime.sendMessage({ type: "OE_OPEN_QUERY", query: nextQuery });
+    const message = { type: "OE_OPEN_QUERY", query: nextQuery };
+    if (meta) {
+      message.meta = meta;
+    }
+    chrome.runtime.sendMessage(message);
+  }
+}
+
+function openUpToDate(query) {
+  const nextQuery = typeof query === "string" ? query.trim() : "";
+  if (nextQuery) {
+    chrome.runtime.sendMessage({ type: "OE_OPEN_UPTODATE", query: nextQuery });
   }
 }
 
@@ -282,6 +296,9 @@ function getButtonIconName(text) {
   if (normalized.includes("ask")) {
     return "search";
   }
+  if (normalized === "uptodate") {
+    return "book-open";
+  }
   if (normalized === "pico") {
     return "shell";
   }
@@ -312,6 +329,10 @@ function createLucideIcon(name) {
       '<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'
     ],
     search: ['<circle cx="11" cy="11" r="8"/>', '<path d="m21 21-4.3-4.3"/>'],
+    "book-open": [
+      '<path d="M12 7v14"/>',
+      '<path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>'
+    ],
     shell: [
       '<path d="M14 11a2 2 0 1 1-4 0 4 4 0 0 1 8 0 6 6 0 0 1-12 0 8 8 0 0 1 16 0 10 10 0 1 1-20 0 12 12 0 0 1 24 0"/>',
       '<path d="M12 11v11"/>'
@@ -363,6 +384,23 @@ function ensureToolbar() {
   });
 
   toolbar.appendChild(askButton);
+
+  const upToDateButton = makeToolbarButton(
+    "oe-selection-button oe-selection-button--uptodate",
+    "UpToDate",
+    "Search the selection on UpToDate"
+  );
+
+  upToDateButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const query = selectedText || getSelectionText();
+    removeButton();
+    openUpToDate(query);
+  });
+
+  toolbar.appendChild(upToDateButton);
 
   if (groqKeyValidated) {
     const picoButton = makeToolbarButton(
@@ -430,7 +468,7 @@ function ensureResultPanel() {
   return resultPanel;
 }
 
-function renderPicoResult(content) {
+function renderPicoResult(content, meta) {
   if (!resultPanel) {
     return;
   }
@@ -454,7 +492,7 @@ function renderPicoResult(content) {
   askButton.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
-    openQuery(textarea.value);
+    openQuery(textarea.value, meta ? { ...meta, transformed: content } : undefined);
     removeResultPanel();
   });
 
@@ -537,7 +575,12 @@ function generatePicoQuestion() {
       return;
     }
 
-    renderPicoResult(response.content);
+    renderPicoResult(response.content, {
+      source: "pico",
+      original: selection,
+      promptName: "PICO",
+      promptInstruction: response.prompt
+    });
   });
 }
 
@@ -571,7 +614,12 @@ function generateCustomPrompt(customPrompt) {
         return;
       }
 
-      renderPicoResult(response.content);
+      renderPicoResult(response.content, {
+        source: "custom",
+        original: selection,
+        promptName: customPrompt.name,
+        promptInstruction: customPrompt.prompt
+      });
     }
   );
 }

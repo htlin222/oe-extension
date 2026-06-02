@@ -13,43 +13,58 @@
         <p>Show the oe selection button only on these URL prefixes. Use one entry per line.</p>
       </header>
 
+      <nav class="tab-nav" role="tablist" aria-label="Options sections">
+        <button type="button" class="tab-button is-active" data-tab="settings" role="tab" aria-selected="true">Settings</button>
+        <button type="button" class="tab-button" data-tab="prompts" role="tab" aria-selected="false">Prompts</button>
+        <button type="button" class="tab-button" data-tab="history" role="tab" aria-selected="false">History</button>
+      </nav>
+
       <form id="options-form">
-        <label for="whitelist">Whitelisted websites</label>
-        <textarea id="whitelist" spellcheck="false" rows="8"></textarea>
+        <section id="tab-settings" class="tab-panel" role="tabpanel">
+          <label for="whitelist">Whitelisted websites</label>
+          <textarea id="whitelist" spellcheck="false" rows="8"></textarea>
 
-        <label class="toggle-row" for="open-active">
-          <input id="open-active" type="checkbox">
-          <span>Switch to the OpenEvidence tab after opening</span>
-        </label>
+          <label class="toggle-row" for="open-active">
+            <input id="open-active" type="checkbox">
+            <span>Switch to the OpenEvidence tab after opening</span>
+          </label>
 
-        <section class="settings-section">
-          <h2>Appearance</h2>
-          <label for="theme">Theme</label>
-          <select id="theme">
-            <option value="system">System</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
+          <label class="toggle-row" for="record-history">
+            <input id="record-history" type="checkbox">
+            <span>Record OpenEvidence query history</span>
+          </label>
+
+          <section class="settings-section">
+            <h2>Appearance</h2>
+            <label for="theme">Theme</label>
+            <select id="theme">
+              <option value="system">System</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </section>
+
+          <section class="settings-section">
+            <h2>PICO rewrite</h2>
+            <p>Store a Groq API key locally to show the PICO button beside Ask OpenEvidence.</p>
+            <label for="groq-api-key">Groq API key</label>
+            <div class="key-row">
+              <input id="groq-api-key" type="password" autocomplete="off" spellcheck="false">
+              <button type="button" id="edit-groq-key">Edit</button>
+              <button type="button" id="save-groq-key">Save</button>
+              <button type="button" id="clear-groq-key">Clear</button>
+            </div>
+            <p id="groq-status" role="status" aria-live="polite"></p>
+          </section>
         </section>
 
-        <section class="settings-section">
-          <h2>PICO rewrite</h2>
-          <p>Store a Groq API key locally to show the PICO button beside Ask OpenEvidence.</p>
-          <label for="groq-api-key">Groq API key</label>
-          <div class="key-row">
-            <input id="groq-api-key" type="password" autocomplete="off" spellcheck="false">
-            <button type="button" id="edit-groq-key">Edit</button>
-            <button type="button" id="save-groq-key">Save</button>
-            <button type="button" id="clear-groq-key">Clear</button>
-          </div>
-          <p id="groq-status" role="status" aria-live="polite"></p>
-        </section>
-
-        <section class="settings-section">
-          <h2>Custom prompts</h2>
-          <p>Create Groq-backed buttons. Use the prompt to tell the model how to transform the selected text.</p>
-          <div id="custom-prompts" class="custom-prompts"></div>
-          <button type="button" id="add-custom-prompt">Add Custom Prompt</button>
+        <section id="tab-prompts" class="tab-panel" role="tabpanel" hidden>
+          <section class="settings-section">
+            <h2>Custom prompts</h2>
+            <p>Create Groq-backed buttons. Use the prompt to tell the model how to transform the selected text.</p>
+            <div id="custom-prompts" class="custom-prompts"></div>
+            <button type="button" id="add-custom-prompt">Add Custom Prompt</button>
+          </section>
         </section>
 
         <div class="actions">
@@ -58,6 +73,16 @@
         </div>
         <p id="status" role="status" aria-live="polite"></p>
       </form>
+
+      <section id="tab-history" class="tab-panel" role="tabpanel" hidden>
+        <div class="history-header">
+          <h2>Query history</h2>
+          <button type="button" id="clear-history">Clear history</button>
+        </div>
+        <p class="history-hint">Every text sent to OpenEvidence is recorded locally. Transforms also keep the original selection, prompt, and output.</p>
+        <div id="history-list" class="history-list"></div>
+        <p id="history-empty" class="history-empty" hidden>No history yet.</p>
+      </section>
     </main>
 
     <script src="options.js"></script>
