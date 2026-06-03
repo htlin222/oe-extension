@@ -38,6 +38,11 @@ function buildUpToDateUrl(query) {
   return `https://www.uptodate.com/contents/search?${params.toString()}`;
 }
 
+function buildGoogleUrl(query) {
+  const params = new URLSearchParams({ q: query, sourceid: "chrome", ie: "UTF-8" });
+  return `https://www.google.com/search?${params.toString()}`;
+}
+
 let historyIdCounter = 0;
 
 function buildHistoryEntry(entry) {
@@ -126,6 +131,16 @@ function openUpToDateQuery(query, sourceTab, sendResponse) {
   }
 
   openUrlBesideTab(buildUpToDateUrl(nextQuery), sourceTab, sendResponse);
+}
+
+function openGoogleQuery(query, sourceTab, sendResponse) {
+  const nextQuery = typeof query === "string" ? query.trim() : "";
+  if (!nextQuery) {
+    sendResponse?.({ ok: false, error: "Empty query" });
+    return;
+  }
+
+  openUrlBesideTab(buildGoogleUrl(nextQuery), sourceTab, sendResponse);
 }
 
 async function callGroq(apiKey, messages, options = {}) {
@@ -254,6 +269,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message?.type === "OE_OPEN_UPTODATE") {
     openUpToDateQuery(message.query, sender.tab, sendResponse);
+    return true;
+  }
+
+  if (message?.type === "OE_OPEN_GOOGLE") {
+    openGoogleQuery(message.query, sender.tab, sendResponse);
     return true;
   }
 

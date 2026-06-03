@@ -11,6 +11,7 @@ const DEFAULT_WHITELIST = [
 ];
 const BUTTON_WIDTH = 154;
 const UPTODATE_BUTTON_WIDTH = 110;
+const GOOGLE_BUTTON_WIDTH = 96;
 const PICO_BUTTON_WIDTH = 62;
 const CUSTOM_BUTTON_WIDTH = 96;
 const BUTTON_HEIGHT = 34;
@@ -181,6 +182,8 @@ function getButtonPosition() {
       BUTTON_WIDTH +
         BUTTON_GAP +
         UPTODATE_BUTTON_WIDTH +
+        BUTTON_GAP +
+        GOOGLE_BUTTON_WIDTH +
         (groqKeyValidated ? BUTTON_GAP + PICO_BUTTON_WIDTH : 0) +
         customButtonCount * (BUTTON_GAP + CUSTOM_BUTTON_WIDTH)
     );
@@ -229,6 +232,13 @@ function openUpToDate(query) {
   const nextQuery = typeof query === "string" ? query.trim() : "";
   if (nextQuery) {
     chrome.runtime.sendMessage({ type: "OE_OPEN_UPTODATE", query: nextQuery });
+  }
+}
+
+function openGoogle(query) {
+  const nextQuery = typeof query === "string" ? query.trim() : "";
+  if (nextQuery) {
+    chrome.runtime.sendMessage({ type: "OE_OPEN_GOOGLE", query: nextQuery });
   }
 }
 
@@ -299,6 +309,9 @@ function getButtonIconName(text) {
   if (normalized === "uptodate") {
     return "book-open";
   }
+  if (normalized === "google") {
+    return "globe";
+  }
   if (normalized === "pico") {
     return "shell";
   }
@@ -332,6 +345,11 @@ function createLucideIcon(name) {
     "book-open": [
       '<path d="M12 7v14"/>',
       '<path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>'
+    ],
+    globe: [
+      '<circle cx="12" cy="12" r="10"/>',
+      '<path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/>',
+      '<path d="M2 12h20"/>'
     ],
     shell: [
       '<path d="M14 11a2 2 0 1 1-4 0 4 4 0 0 1 8 0 6 6 0 0 1-12 0 8 8 0 0 1 16 0 10 10 0 1 1-20 0 12 12 0 0 1 24 0"/>',
@@ -402,6 +420,23 @@ function ensureToolbar() {
 
   toolbar.appendChild(upToDateButton);
 
+  const googleButton = makeToolbarButton(
+    "oe-selection-button oe-selection-button--google",
+    "Google",
+    "Search the selection on Google"
+  );
+
+  googleButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const query = selectedText || getSelectionText();
+    removeButton();
+    openGoogle(query);
+  });
+
+  toolbar.appendChild(googleButton);
+
   if (groqKeyValidated) {
     const picoButton = makeToolbarButton(
       "oe-selection-button oe-selection-button--pico",
@@ -435,6 +470,7 @@ function ensureToolbar() {
   }
 
   document.documentElement.appendChild(toolbar);
+  startTrackingUi();
   return toolbar;
 }
 
@@ -465,6 +501,7 @@ function ensureResultPanel() {
   });
 
   document.documentElement.appendChild(resultPanel);
+  startTrackingUi();
   return resultPanel;
 }
 
@@ -650,6 +687,61 @@ function showButton() {
     window.clearTimeout(hideTimer);
   }
   hideTimer = window.setTimeout(removeButton, 12000);
+}
+
+function repositionUi() {
+  if (toolbar) {
+    const position = getButtonPosition();
+    if (position) {
+      toolbar.style.left = `${position.left}px`;
+      toolbar.style.top = `${position.top}px`;
+    }
+  }
+
+  if (resultPanel) {
+    const position = getPanelPosition();
+    if (position) {
+      resultPanel.style.left = `${position.left}px`;
+      resultPanel.style.top = `${position.top}px`;
+      resultPanel.style.width = `${position.width}px`;
+    }
+  }
+}
+
+// The toolbar and result panel are position: fixed and anchored to the
+// selection's viewport rect. Relying on scroll events to re-anchor them lags at
+// the start of a scroll, because passive scroll events are coalesced/delayed
+// while the compositor scrolls (and on busy host pages). Instead, track on every
+// animation frame while the UI is visible — like Floating UI autoUpdate's
+// animationFrame mode — so it stays glued through scroll, nested scroll, resize,
+// zoom, and layout shifts with no event-delivery latency. The loop stops itself
+// once both surfaces are gone.
+let trackFrame = null;
+let lastRectKey = "";
+
+function trackSelectionUi() {
+  trackFrame = null;
+
+  if (!toolbar && !resultPanel) {
+    lastRectKey = "";
+    return;
+  }
+
+  const rect = getSelectionRect();
+  const rectKey = rect ? `${rect.left},${rect.top},${rect.width},${rect.height}` : "";
+  if (rectKey !== lastRectKey) {
+    lastRectKey = rectKey;
+    repositionUi();
+  }
+
+  trackFrame = window.requestAnimationFrame(trackSelectionUi);
+}
+
+function startTrackingUi() {
+  if (trackFrame === null) {
+    lastRectKey = "";
+    trackFrame = window.requestAnimationFrame(trackSelectionUi);
+  }
 }
 
 document.addEventListener("mouseup", showButton, true);
