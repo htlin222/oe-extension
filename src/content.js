@@ -12,6 +12,7 @@ const DEFAULT_WHITELIST = [
 const BUTTON_WIDTH = 154;
 const UPTODATE_BUTTON_WIDTH = 110;
 const GOOGLE_BUTTON_WIDTH = 96;
+const CLOSE_BUTTON_WIDTH = 34;
 const PICO_BUTTON_WIDTH = 62;
 const CUSTOM_BUTTON_WIDTH = 96;
 const BUTTON_HEIGHT = 34;
@@ -185,7 +186,9 @@ function getButtonPosition() {
         BUTTON_GAP +
         GOOGLE_BUTTON_WIDTH +
         (groqKeyValidated ? BUTTON_GAP + PICO_BUTTON_WIDTH : 0) +
-        customButtonCount * (BUTTON_GAP + CUSTOM_BUTTON_WIDTH)
+        customButtonCount * (BUTTON_GAP + CUSTOM_BUTTON_WIDTH) +
+        BUTTON_GAP +
+        CLOSE_BUTTON_WIDTH
     );
   const centeredLeft = selectionRect.left + selectionRect.width / 2 - toolbarWidth / 2;
   const maxLeft = window.innerWidth - toolbarWidth - VIEWPORT_MARGIN;
@@ -312,6 +315,9 @@ function getButtonIconName(text) {
   if (normalized === "google") {
     return "globe";
   }
+  if (normalized === "reload") {
+    return "rotate-cw";
+  }
   if (normalized === "pico") {
     return "shell";
   }
@@ -350,6 +356,15 @@ function createLucideIcon(name) {
       '<circle cx="12" cy="12" r="10"/>',
       '<path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/>',
       '<path d="M2 12h20"/>'
+    ],
+    "rotate-cw": [
+      '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>',
+      '<path d="M21 3v5h-5"/>'
+    ],
+    "circle-x": [
+      '<circle cx="12" cy="12" r="10"/>',
+      '<path d="m15 9-6 6"/>',
+      '<path d="m9 9 6 6"/>'
     ],
     shell: [
       '<path d="M14 11a2 2 0 1 1-4 0 4 4 0 0 1 8 0 6 6 0 0 1-12 0 8 8 0 0 1 16 0 10 10 0 1 1-20 0 12 12 0 0 1 24 0"/>',
@@ -469,9 +484,40 @@ function ensureToolbar() {
     });
   }
 
+  const closeButton = document.createElement("button");
+  closeButton.type = "button";
+  closeButton.className = "oe-selection-button oe-selection-button--close";
+  closeButton.title = "Close";
+  closeButton.setAttribute("aria-label", "Close toolbar");
+  closeButton.append(createLucideIcon("circle-x"));
+  closeButton.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  closeButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    removeButtonImmediately();
+  });
+  toolbar.appendChild(closeButton);
+
   document.documentElement.appendChild(toolbar);
   startTrackingUi();
   return toolbar;
+}
+
+function renderPicoSkeleton() {
+  if (!resultPanel) {
+    return;
+  }
+
+  resultPanel.innerHTML = `
+    <div class="oe-pico-panel__skeleton" aria-label="Generating PICO question">
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+  `;
 }
 
 function ensureResultPanel() {
@@ -488,13 +534,7 @@ function ensureResultPanel() {
   resultPanel.style.left = `${position.left}px`;
   resultPanel.style.top = `${position.top}px`;
   resultPanel.style.width = `${position.width}px`;
-  resultPanel.innerHTML = `
-    <div class="oe-pico-panel__skeleton" aria-label="Generating PICO question">
-      <span></span>
-      <span></span>
-      <span></span>
-    </div>
-  `;
+  renderPicoSkeleton();
 
   resultPanel.addEventListener("mousedown", (event) => {
     event.stopPropagation();
@@ -503,6 +543,36 @@ function ensureResultPanel() {
   document.documentElement.appendChild(resultPanel);
   startTrackingUi();
   return resultPanel;
+}
+
+function reloadTransform(meta) {
+  if (!resultPanel || !meta?.original) {
+    return;
+  }
+
+  renderPicoSkeleton();
+
+  const message =
+    meta.source === "custom"
+      ? { type: "OE_GENERATE_CUSTOM_PROMPT", selection: meta.original, prompt: meta.promptInstruction }
+      : { type: "OE_GENERATE_PICO", selection: meta.original };
+
+  chrome.runtime.sendMessage(message, (response) => {
+    if (chrome.runtime.lastError) {
+      renderPicoError(chrome.runtime.lastError.message);
+      return;
+    }
+
+    if (!response?.ok) {
+      renderPicoError(response?.error || "Unable to regenerate the output");
+      return;
+    }
+
+    renderPicoResult(response.content, {
+      ...meta,
+      promptInstruction: meta.promptInstruction || response.prompt
+    });
+  });
 }
 
 function renderPicoResult(content, meta) {
@@ -562,7 +632,18 @@ function renderPicoResult(content, meta) {
     removeResultPanel();
   });
 
-  actions.append(copyButton, askButton, closeButton);
+  if (meta?.original) {
+    const reloadButton = makeToolbarButton("oe-pico-panel__button", "Reload", "Regenerate the output");
+    reloadButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      reloadTransform(meta);
+    });
+    actions.append(reloadButton, copyButton, askButton, closeButton);
+  } else {
+    actions.append(copyButton, askButton, closeButton);
+  }
+
   resultPanel.append(textarea, actions);
   textarea.focus();
 }
