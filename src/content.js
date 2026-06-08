@@ -7,6 +7,8 @@ const DEFAULT_WHITELIST = [
   "https://www.openevidence.com/*",
   "http://uptodate.com/*",
   "nejm.org/*",
+  "https://accessmedicine.mhmedical.com/*",
+  "https://www.clinicalkey.com/*",
   "file:///*"
 ];
 const BUTTON_WIDTH = 154;
