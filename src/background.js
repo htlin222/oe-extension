@@ -10,6 +10,12 @@ const DEFAULT_WHITELIST = [
 const STORAGE_KEY = "oeWhitelist";
 const ACTIVE_TAB_STORAGE_KEY = "oeOpenInActiveTab";
 const DEFAULT_OPEN_IN_ACTIVE_TAB = false;
+const OPEN_MODE_STORAGE_KEY = "oeOpenMode";
+const OPEN_MODE_TAB_BG = "tab-bg";
+const OPEN_MODE_TAB_ACTIVE = "tab-active";
+const OPEN_MODE_SIDE_PANE = "side-pane";
+const DEFAULT_OPEN_MODE = OPEN_MODE_TAB_BG;
+const SIDE_PANEL_URL_KEY = "oeSidePanelUrl";
 const GROQ_API_KEY_STORAGE_KEY = "oeGroqApiKey";
 const GROQ_VALIDATED_STORAGE_KEY = "oeGroqApiKeyValidated";
 const GROQ_MODEL = "llama-3.3-70b-versatile";
@@ -91,6 +97,32 @@ function recordHistory(entry) {
   );
 }
 
+function resolveOpenMode(items) {
+  const mode = items[OPEN_MODE_STORAGE_KEY];
+  if (mode === OPEN_MODE_TAB_BG || mode === OPEN_MODE_TAB_ACTIVE || mode === OPEN_MODE_SIDE_PANE) {
+    return mode;
+  }
+
+  // Migrate the legacy boolean for users who set it before the 3-way mode.
+  return items[ACTIVE_TAB_STORAGE_KEY] === true ? OPEN_MODE_TAB_ACTIVE : DEFAULT_OPEN_MODE;
+}
+
+// Cached synchronously so the side-panel open() call can run inside the user
+// gesture that triggered the message — chrome.storage reads are async and would
+// break the gesture chain, leaving sidePanel.open() to reject.
+let openModeCache = DEFAULT_OPEN_MODE;
+
+function loadOpenMode() {
+  chrome.storage.sync.get(
+    { [OPEN_MODE_STORAGE_KEY]: null, [ACTIVE_TAB_STORAGE_KEY]: DEFAULT_OPEN_IN_ACTIVE_TAB },
+    (items) => {
+      openModeCache = resolveOpenMode(items);
+    }
+  );
+}
+
+loadOpenMode();
+
 function buildTabOptions(url, active, sourceTab) {
   const tabOptions = { url, active };
 
@@ -101,16 +133,51 @@ function buildTabOptions(url, active, sourceTab) {
   return tabOptions;
 }
 
-function openUrlBesideTab(url, sourceTab, sendResponse) {
-  chrome.storage.sync.get({ [ACTIVE_TAB_STORAGE_KEY]: DEFAULT_OPEN_IN_ACTIVE_TAB }, (items) => {
-    const active = items[ACTIVE_TAB_STORAGE_KEY] === true;
-    const tabOptions = buildTabOptions(url, active, sourceTab);
+function openInTab(url, sourceTab, sendResponse, active) {
+  const tabOptions = buildTabOptions(url, active, sourceTab);
 
-    chrome.tabs
-      .create(tabOptions)
-      .then(() => sendResponse?.({ ok: true }))
-      .catch((error) => sendResponse?.({ ok: false, error: error.message }));
-  });
+  chrome.tabs
+    .create(tabOptions)
+    .then((tab) => {
+      // "Switch to it" must also pull the window forward, not just mark the tab
+      // active — this is what the old single-checkbox path was missing.
+      if (active && tab?.windowId != null) {
+        chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+      }
+      sendResponse?.({ ok: true });
+    })
+    .catch((error) => sendResponse?.({ ok: false, error: error.message }));
+}
+
+function openInSidePanel(url, label, sourceTab, sendResponse) {
+  const tabId = sourceTab?.id;
+  if (tabId == null || !chrome.sidePanel?.open) {
+    openInTab(url, sourceTab, sendResponse, true);
+    return;
+  }
+
+  // Open first (still inside the gesture), THEN stash the URL. The panel page
+  // reads it from storage.session on load / via onChanged.
+  const openPromise = chrome.sidePanel.open({ tabId });
+  chrome.storage.session.set({ [SIDE_PANEL_URL_KEY]: { url, label, ts: Date.now() } });
+
+  openPromise
+    .then(() => sendResponse?.({ ok: true }))
+    .catch(() => openInTab(url, sourceTab, sendResponse, true));
+}
+
+// Routes a query URL by the active open mode. Frameable engines (OpenEvidence,
+// UpToDate) use the side pane in side-pane mode; Google can't be iframed
+// (X-Frame-Options: SAMEORIGIN), so it falls back to a focused tab.
+function dispatchOpen(url, label, frameable, sourceTab, sendResponse) {
+  if (openModeCache === OPEN_MODE_SIDE_PANE && frameable) {
+    openInSidePanel(url, label, sourceTab, sendResponse);
+    return;
+  }
+
+  // Background only in plain "new tab" mode; otherwise pull focus (this also
+  // covers the side-pane fallback for non-frameable engines).
+  openInTab(url, sourceTab, sendResponse, openModeCache !== OPEN_MODE_TAB_BG);
 }
 
 function openOpenEvidenceQuery(query, sourceTab, sendResponse, meta) {
@@ -122,7 +189,7 @@ function openOpenEvidenceQuery(query, sourceTab, sendResponse, meta) {
 
   const url = buildOpenEvidenceUrl(nextQuery);
   recordHistory({ ...(meta || { source: "selection" }), url, finalText: nextQuery });
-  openUrlBesideTab(url, sourceTab, sendResponse);
+  dispatchOpen(url, "OpenEvidence", true, sourceTab, sendResponse);
 }
 
 function openUpToDateQuery(query, sourceTab, sendResponse) {
@@ -132,7 +199,7 @@ function openUpToDateQuery(query, sourceTab, sendResponse) {
     return;
   }
 
-  openUrlBesideTab(buildUpToDateUrl(nextQuery), sourceTab, sendResponse);
+  dispatchOpen(buildUpToDateUrl(nextQuery), "UpToDate", true, sourceTab, sendResponse);
 }
 
 function openGoogleQuery(query, sourceTab, sendResponse) {
@@ -142,7 +209,7 @@ function openGoogleQuery(query, sourceTab, sendResponse) {
     return;
   }
 
-  openUrlBesideTab(buildGoogleUrl(nextQuery), sourceTab, sendResponse);
+  dispatchOpen(buildGoogleUrl(nextQuery), "Google", false, sourceTab, sendResponse);
 }
 
 async function callGroq(apiKey, messages, options = {}) {
@@ -240,20 +307,27 @@ Export as JSON:
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
-  const stored = await chrome.storage.sync.get([STORAGE_KEY, ACTIVE_TAB_STORAGE_KEY]);
+  const stored = await chrome.storage.sync.get([STORAGE_KEY, ACTIVE_TAB_STORAGE_KEY, OPEN_MODE_STORAGE_KEY]);
   const defaults = {};
 
   if (!stored[STORAGE_KEY]) {
     defaults[STORAGE_KEY] = DEFAULT_WHITELIST;
   }
 
-  if (typeof stored[ACTIVE_TAB_STORAGE_KEY] !== "boolean") {
-    defaults[ACTIVE_TAB_STORAGE_KEY] = DEFAULT_OPEN_IN_ACTIVE_TAB;
+  // Seed the 3-way mode, migrating the legacy "open in active tab" boolean.
+  if (
+    stored[OPEN_MODE_STORAGE_KEY] !== OPEN_MODE_TAB_BG &&
+    stored[OPEN_MODE_STORAGE_KEY] !== OPEN_MODE_TAB_ACTIVE &&
+    stored[OPEN_MODE_STORAGE_KEY] !== OPEN_MODE_SIDE_PANE
+  ) {
+    defaults[OPEN_MODE_STORAGE_KEY] = resolveOpenMode(stored);
   }
 
   if (Object.keys(defaults).length > 0) {
     await chrome.storage.sync.set(defaults);
   }
+
+  loadOpenMode();
 
   await chrome.contextMenus.removeAll();
   chrome.contextMenus.create({
@@ -374,6 +448,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   return false;
+});
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "sync") {
+    return;
+  }
+
+  if (changes[OPEN_MODE_STORAGE_KEY] || changes[ACTIVE_TAB_STORAGE_KEY]) {
+    loadOpenMode();
+  }
 });
 
 chrome.action.onClicked.addListener(() => {

@@ -1,5 +1,8 @@
 const STORAGE_KEY = "oeWhitelist";
 const ACTIVE_TAB_STORAGE_KEY = "oeOpenInActiveTab";
+const OPEN_MODE_STORAGE_KEY = "oeOpenMode";
+const OPEN_MODES = ["tab-bg", "tab-active", "side-pane"];
+const DEFAULT_OPEN_MODE = "tab-bg";
 const CUSTOM_PROMPTS_STORAGE_KEY = "oeCustomPrompts";
 const THEME_STORAGE_KEY = "oeTheme";
 const GROQ_API_KEY_STORAGE_KEY = "oeGroqApiKey";
@@ -21,7 +24,7 @@ const DEFAULT_THEME = "system";
 
 const form = document.querySelector("#options-form");
 const textarea = document.querySelector("#whitelist");
-const openActiveCheckbox = document.querySelector("#open-active");
+const openModeSelect = document.querySelector("#open-mode");
 const themeSelect = document.querySelector("#theme");
 const groqApiKeyInput = document.querySelector("#groq-api-key");
 const editGroqKeyButton = document.querySelector("#edit-groq-key");
@@ -122,6 +125,16 @@ function normalizeTheme(value) {
   return ["system", "light", "dark"].includes(value) ? value : DEFAULT_THEME;
 }
 
+function resolveOpenMode(items) {
+  const mode = items[OPEN_MODE_STORAGE_KEY];
+  if (OPEN_MODES.includes(mode)) {
+    return mode;
+  }
+
+  // Migrate the legacy "open in active tab" boolean.
+  return items[ACTIVE_TAB_STORAGE_KEY] === true ? "tab-active" : DEFAULT_OPEN_MODE;
+}
+
 function applyOptionsTheme(value) {
   const theme = normalizeTheme(value);
   const resolvedTheme =
@@ -191,12 +204,13 @@ async function loadOptions() {
   const items = await chrome.storage.sync.get({
     [STORAGE_KEY]: DEFAULT_WHITELIST,
     [ACTIVE_TAB_STORAGE_KEY]: DEFAULT_OPEN_IN_ACTIVE_TAB,
+    [OPEN_MODE_STORAGE_KEY]: null,
     [CUSTOM_PROMPTS_STORAGE_KEY]: [],
     [THEME_STORAGE_KEY]: DEFAULT_THEME
   });
   const whitelist = Array.isArray(items[STORAGE_KEY]) ? items[STORAGE_KEY] : DEFAULT_WHITELIST;
   textarea.value = whitelist.join("\n");
-  openActiveCheckbox.checked = items[ACTIVE_TAB_STORAGE_KEY] === true;
+  openModeSelect.value = resolveOpenMode(items);
   themeSelect.value = normalizeTheme(items[THEME_STORAGE_KEY]);
   applyOptionsTheme(themeSelect.value);
   customPromptsContainer.textContent = "";
@@ -220,9 +234,12 @@ form.addEventListener("submit", async (event) => {
   const whitelist = parseWhitelist(textarea.value);
   const customPrompts = getCustomPromptRows();
 
+  const openMode = OPEN_MODES.includes(openModeSelect.value) ? openModeSelect.value : DEFAULT_OPEN_MODE;
+
   await chrome.storage.sync.set({
     [STORAGE_KEY]: whitelist.length > 0 ? whitelist : DEFAULT_WHITELIST,
-    [ACTIVE_TAB_STORAGE_KEY]: openActiveCheckbox.checked,
+    [OPEN_MODE_STORAGE_KEY]: openMode,
+    [ACTIVE_TAB_STORAGE_KEY]: openMode === "tab-active",
     [CUSTOM_PROMPTS_STORAGE_KEY]: customPrompts,
     [THEME_STORAGE_KEY]: normalizeTheme(themeSelect.value)
   });
@@ -233,12 +250,13 @@ form.addEventListener("submit", async (event) => {
 resetButton.addEventListener("click", async () => {
   await chrome.storage.sync.set({
     [STORAGE_KEY]: DEFAULT_WHITELIST,
+    [OPEN_MODE_STORAGE_KEY]: DEFAULT_OPEN_MODE,
     [ACTIVE_TAB_STORAGE_KEY]: DEFAULT_OPEN_IN_ACTIVE_TAB,
     [CUSTOM_PROMPTS_STORAGE_KEY]: [],
     [THEME_STORAGE_KEY]: DEFAULT_THEME
   });
   textarea.value = DEFAULT_WHITELIST.join("\n");
-  openActiveCheckbox.checked = DEFAULT_OPEN_IN_ACTIVE_TAB;
+  openModeSelect.value = DEFAULT_OPEN_MODE;
   themeSelect.value = DEFAULT_THEME;
   applyOptionsTheme(DEFAULT_THEME);
   customPromptsContainer.textContent = "";

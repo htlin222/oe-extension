@@ -1,12 +1,15 @@
 {
   "manifest_version": 3,
   "name": "OpenEvidence Selection Opener",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Show an OE button after selecting text on whitelisted sites and open the selection in OpenEvidence.",
-  "permissions": ["storage", "tabs", "contextMenus"],
+  "permissions": ["storage", "tabs", "contextMenus", "sidePanel"],
   "host_permissions": ["<all_urls>", "https://api.groq.com/*"],
   "background": {
     "service_worker": "src/background.js"
+  },
+  "side_panel": {
+    "default_path": "src/sidepanel.html"
   },
   "icons": {
     "16": "icons/icon-16.png",

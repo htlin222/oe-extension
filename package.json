@@ -1,6 +1,6 @@
 {
   "name": "oe-extension",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Chrome extension for opening selected clinical text in OpenEvidence and rewriting selections into evidence-focused questions.",
   "license": "MIT",
   "type": "module",
@@ -17,6 +17,6 @@
   ],
   "scripts": {
     "build": "node scripts/build-extension.mjs",
-    "test": "node tests/url-format.test.mjs && node tests/whitelist.test.mjs && node tests/settings.test.mjs && node tests/pico-prompt.test.mjs && node tests/tab-options.test.mjs && node tests/custom-prompts.test.mjs && node tests/theme.test.mjs && node tests/history.test.mjs && node tests/uptodate-url.test.mjs && node tests/google-url.test.mjs"
+    "test": "node scripts/run-tests.mjs"
   }
 }

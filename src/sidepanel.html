@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OpenEvidence</title>
+    <link rel="stylesheet" href="sidepanel.css">
+  </head>
+  <body>
+    <header class="panel-bar">
+      <span id="panel-title" class="panel-title">OpenEvidence</span>
+      <div class="panel-actions">
+        <button type="button" id="open-tab" class="panel-action" title="Open in a new tab" aria-label="Open in a new tab" hidden>Open in tab</button>
+        <button type="button" id="close-panel" class="panel-action panel-action--close" title="Close side pane" aria-label="Close side pane">Close</button>
+      </div>
+    </header>
+
+    <p id="panel-empty" class="panel-empty">Select text on a page and choose <strong>Ask OpenEvidence</strong> to load a question here.</p>
+
+    <iframe
+      id="oe-frame"
+      class="panel-frame"
+      title="OpenEvidence"
+      referrerpolicy="no-referrer"
+      allow="clipboard-write"
+      hidden
+    ></iframe>
+
+    <script src="sidepanel.js"></script>
+  </body>
+</html>

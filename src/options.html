@@ -24,10 +24,12 @@
           <label for="whitelist">Whitelisted websites</label>
           <textarea id="whitelist" spellcheck="false" rows="8"></textarea>
 
-          <label class="toggle-row" for="open-active">
-            <input id="open-active" type="checkbox">
-            <span>Switch to the OpenEvidence tab after opening</span>
-          </label>
+          <label for="open-mode">Open OpenEvidence in</label>
+          <select id="open-mode">
+            <option value="tab-bg">New tab (background)</option>
+            <option value="tab-active">New tab, switch to it</option>
+            <option value="side-pane">Side pane</option>
+          </select>
 
           <label class="toggle-row" for="record-history">
             <input id="record-history" type="checkbox">
