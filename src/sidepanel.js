@@ -6,6 +6,7 @@ const frame = document.querySelector("#oe-frame");
 const empty = document.querySelector("#panel-empty");
 const openTabButton = document.querySelector("#open-tab");
 const closeButton = document.querySelector("#close-panel");
+const settingsButton = document.querySelector("#open-settings");
 const titleEl = document.querySelector("#panel-title");
 const colorSchemeQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
 
@@ -42,6 +43,10 @@ openTabButton.addEventListener("click", () => {
   if (currentUrl) {
     chrome.tabs.create({ url: currentUrl, active: true });
   }
+});
+
+settingsButton.addEventListener("click", () => {
+  chrome.runtime.openOptionsPage();
 });
 
 // window.close() dismisses the side panel from within its own page.

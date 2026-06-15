@@ -83,6 +83,23 @@ body {
   color: #dc2626;
 }
 
+.panel-action--icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  color: var(--oe-muted);
+}
+
+.panel-action--icon:hover {
+  color: var(--oe-fg);
+}
+
+.panel-icon {
+  width: 15px;
+  height: 15px;
+}
+
 .panel-empty {
   margin: 0;
   padding: 24px 16px;
